@@ -1,0 +1,73 @@
+services:
+
+  nginx:
+    image: nginx:1.25
+    container_name: order_nginx
+    ports:
+      - "8080:80"
+    volumes:
+      - ./:/var/www
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - php
+    networks:
+      - order-network
+
+  php:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: order_php
+    volumes:
+      - ./:/var/www
+    working_dir: /var/www
+    depends_on:
+      - postgres
+      - rabbitmq
+    networks:
+      - order-network
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: order_worker
+    volumes:
+      - ./:/var/www
+    working_dir: /var/www
+    command: php worker.php
+    restart: unless-stopped
+    depends_on:
+      - rabbitmq
+      - postgres
+    networks:
+      - order-network
+
+  postgres:
+    image: postgres:15
+    container_name: order_postgres
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: orders_user
+      POSTGRES_PASSWORD: orders_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - order-network
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: order_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - order-network
+
+volumes:
+  postgres-data:
+
+networks:
+  order-network:

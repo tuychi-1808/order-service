@@ -8,7 +8,6 @@ use App\Domain\Order\ValueObject\OrderStatus;
 use App\Infrastructure\Persistence\Postgres\OrderRepository;
 use App\Infrastructure\Persistence\Postgres\PdoFactory;
 use PhpAmqpLib\Connection\AMQPStreamConnection;
-use PhpAmqpLib\Message\AMQPMessage;
 
 final class OrderProcessingWorker
 {
@@ -33,12 +32,19 @@ final class OrderProcessingWorker
 
         $repository = new OrderRepository(PdoFactory::create());
 
-        $callback = function (AMQPMessage $message) use ($repository): void {
+        while (true) {
+            $message = $channel->basic_get('order.created', false);
+
+            if ($message === null) {
+                sleep(1);
+                continue;
+            }
+
             $payload = json_decode($message->body, true);
 
             if (!is_array($payload) || !isset($payload['orderId'])) {
-                $message->delivery_info['channel']->basic_ack($message->delivery_info['delivery_tag']);
-                return;
+                $channel->basic_ack($message->delivery_info['delivery_tag']);
+                continue;
             }
 
             $orderId = (int) $payload['orderId'];
@@ -46,8 +52,8 @@ final class OrderProcessingWorker
             $order = $repository->findById($orderId);
 
             if ($order === null) {
-                $message->delivery_info['channel']->basic_ack($message->delivery_info['delivery_tag']);
-                return;
+                $channel->basic_ack($message->delivery_info['delivery_tag']);
+                continue;
             }
 
             $repository->updateStatus($orderId, OrderStatus::PROCESSING);
@@ -56,21 +62,7 @@ final class OrderProcessingWorker
 
             $repository->updateStatus($orderId, OrderStatus::PROCESSED);
 
-            $message->delivery_info['channel']->basic_ack($message->delivery_info['delivery_tag']);
-        };
-
-        $channel->basic_consume(
-            'order.created',
-            '',
-            false,
-            false,
-            false,
-            false,
-            $callback
-        );
-
-        while (true) {
-            $channel->wait();
+            $channel->basic_ack($message->delivery_info['delivery_tag']);
         }
     }
 }

@@ -35,7 +35,7 @@ services:
     volumes:
       - ./:/var/www
     working_dir: /var/www
-    command: php worker.php
+    command: php /var/www/worker.php
     restart: unless-stopped
     depends_on:
       - rabbitmq
